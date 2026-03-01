@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import App from "./App";
 
 /**
@@ -6,7 +6,19 @@ import App from "./App";
  * @param {number} n
  */
 function clickSquare(n) {
-  fireEvent.click(screen.getByRole("gridcell", { name: new RegExp(`Square ${n}\\b`, "i") }));
+  fireEvent.click(
+    screen.getByRole("gridcell", { name: new RegExp(`Square ${n}\\b`, "i") })
+  );
+}
+
+/**
+ * Switch game mode using the mode dropdown.
+ * @param {"HUMAN"|"AI"} mode
+ */
+function setMode(mode) {
+  fireEvent.change(screen.getByLabelText(/select game mode/i), {
+    target: { value: mode },
+  });
 }
 
 describe("Tic Tac Toe App", () => {
@@ -17,8 +29,9 @@ describe("Tic Tac Toe App", () => {
     expect(screen.getByRole("button", { name: /restart/i })).toBeInTheDocument();
   });
 
-  test("players alternate turns and a win is detected", () => {
+  test("Human vs Human: players alternate turns and a win is detected", () => {
     render(<App />);
+    setMode("HUMAN");
 
     // X wins across the top row: 1,2,3
     clickSquare(1); // X
@@ -34,8 +47,9 @@ describe("Tic Tac Toe App", () => {
     expect(screen.queryByLabelText(/Square 6:\s*(X|O)/i)).not.toBeInTheDocument();
   });
 
-  test("detects a draw", () => {
+  test("Human vs Human: detects a draw", () => {
     render(<App />);
+    setMode("HUMAN");
 
     /**
      * Draw sequence (no 3-in-a-row):
@@ -68,5 +82,52 @@ describe("Tic Tac Toe App", () => {
     // Board should be cleared (Square 1 label should not include ": X" anymore)
     expect(screen.queryByLabelText(/Square 1:\s*X/i)).not.toBeInTheDocument();
     expect(screen.getByText(/next player:\s*x/i)).toBeInTheDocument();
+  });
+
+  test("Human vs AI: AI makes a move automatically after the human plays", () => {
+    jest.useFakeTimers();
+    render(<App />);
+
+    setMode("AI");
+
+    // Human plays X in top-left (Square 1).
+    clickSquare(1);
+
+    // AI should respond after the thinking delay; we advance timers.
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+
+    // AI's deterministic policy should choose center if available (Square 5).
+    expect(screen.getByLabelText(/Square 5:\s*O/i)).toBeInTheDocument();
+
+    jest.useRealTimers();
+  });
+
+  test("Human vs AI: clicking during AI turn does nothing", () => {
+    jest.useFakeTimers();
+    render(<App />);
+    setMode("AI");
+
+    // Human makes a move, then AI is "thinking".
+    clickSquare(1);
+
+    // During AI turn, clicks should be ignored.
+    clickSquare(2);
+
+    // Still before AI acts, Square 2 should not be filled.
+    expect(screen.queryByLabelText(/Square 2:\s*X/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Square 2:\s*O/i)).not.toBeInTheDocument();
+
+    // Let AI move happen.
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+
+    // Ensure Square 2 still isn't filled (AI picks center).
+    expect(screen.queryByLabelText(/Square 2:\s*(X|O)/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Square 5:\s*O/i)).toBeInTheDocument();
+
+    jest.useRealTimers();
   });
 });
